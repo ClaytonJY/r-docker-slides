@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>R + Docker: Why &amp; How</title>
+    <meta charset="utf-8">
+    <meta name="author" content="Clayton Yochum" />
+    <link rel="stylesheet" href="mc-xaringan.css" type="text/css" />
+    <link rel="stylesheet" href="mc-xaringan-fonts.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# R + Docker: Why &amp; How
+### Clayton Yochum
+### November 9, 2017
+
+---
+
+
+layout: true
+background-color: #fafaef
+&lt;div class="my-footer"&gt;&lt;img src="mc_logo_rectangle.png" style="height: 30px;"/&gt;&lt;/div&gt;
+
+
+
+---
+
+## What is Docker?
+
+--
+
+- Something people _will not_ shut the hell up about 
+--
+(myself included)
+
+--
+
+- docker.com: 
+--
+"Docker is the world's leading software containerization platform"
+
+--
+
+- _containerization_?
+
+--
+
+**My Take**: 
+--
+Docker is a tool for packaging software so it:
+
+--
+
+- is easy to run in different places
+--
+.pull-right[(portable)]
+
+--
+
+- runs the same way in all those places
+--
+.pull-right[(reproducible)]
+
+--
+
+- is easy to throw away and start over
+--
+.pull-right[(disposable)]
+
+--
+
+  
+
+We build computer systems to run code we write
+
+--
+
+Managing servers is a lot of work, but I want to spend as little time doing it as possible
+
+--
+
+_Docker lets me be lazy and worry less about the systems running our code_
+
+---
+
+## So What?
+
+--
+
+Issues we could have solved with Docker:
+
+--
+
+- We have a shiny app on AWS we can no longer run locally
+
+--
+
+- We have another shiny app that takes 1-2 hours to re-deploy when things go wrong
+
+--
+
+- We've delivered code that took our client multiple hours to find and install non-R dependencies for
+
+--
+
+Packrat is ~~great~~okay at managing R package dependencies, but Docker makes it easy to handle _the other stuff_:
+
+--
+
+- unpackaged R code (analysis, modeling, etc.)
+
+--
+
+- system-level dependencies (java, curl, ssl, etc.)
+
+--
+
+- R version
+
+---
+
+## Okay, so what's a container?
+
+--
+
+- It's where your code goes!
+
+--
+
+- _Not_ a new concept; been in linux for decades, but Docker started in 2013
+
+--
+
+- _Containerizing_ some code mean packing it up into a single object that has both the code and everything your code needs to run
+
+--
+
+- We call those objects container _images_
+
+--
+
+- You need special software (docker) to run images, but it should run exactly the same anywhere you run it
+
+---
+
+## Did you just describe a virtual machine?
+
+--
+Yeah, pretty much! But:
+
+--
+
+- Containers are more _lightweight_ and _portable_ than VM's
+
+--
+
+- Containers are easier to deploy, and you can fit more on one system
+
+--
+
+- easier to tell a container what you need than to do the same with a VM
+
+--
+
+- Docker : containers :: Vagrant : virtual machines
+
+--
+
+- VM's emulate a computer _down to the hardware_, but containers make more assumptions, and share common pieces between them
+
+---
+
+![](cont-vs-vm.png)
+
+_source: Docker, Inc._
+
+---
+
+## Why so damn popular?
+
+--
+
+.pull-left[
+In Software Development:
+
+- ensure consistency between dev/staging/production environments
+
+- makes "dev-ops" easier
+
+- many small bits (microservices) are easier to evolve than one bit bit (monolith)
+]
+
+--
+
+.pull-right[
+In Data Science:
+
+- ensure the model runs when it's not on your computer
+
+- would rather build models than babysit servers
+
+- having all the bits together means less headaches
+]
+
+---
+
+## How do we use it?
+
+--
+.pull-left[
+You'll Need:
+
+- docker installed (possibly in a VM)
+
+- access to the terminal
+
+- network/internet access
+]
+
+--
+
+.pull-right[
+Steps:
+
+1. write a Dockerfile (what your code needs)
+
+2. build an image from the Dockerfile
+
+3. run that image somewhere
+]
+
+--
+
+[The Rocker group](https://github.com/rocker-org) puts awesome R images on [Docker Hub](hub.docker.com), so we can skip right to step 3
+
+---
+
+## Running RStudio Server in a container
+
+--
+
+If you have docker setup, it's one command to start running RStudio Server with all the Tidyverse pre-installed:
+
+--
+
+```bash
+docker run -d -p 80:8787 rocker/tidyverse
+```
+
+--
+
+This will:
+
+--
+
+1. Download an image, layer-by-layer, from Docker Hub to your computer
+
+--
+
+2. Run that image, which includes starting RStudio Server inside the image
+
+--
+
+3. Expose the RStudio port (8787) through the local machine's port 80
+
+--
+
+Now open a browser, go to `localhost` (or the IP of your VM), and login to RStudio Server with user/pass `rstudio`/`rstudio`!
+
+---
+
+## Adding our own stuff
+
+For a recent client deliverable, we used that [`rocker/tidyverse`](https://github.com/rocker-org/rocker-versioned/blob/master/tidyverse/3.4.2/Dockerfile) image as a _base_, and added our own code to it:
+
+--
+
+```Dockerfile
+FROM rocker/tidyverse:3.4.2
+
+USER rstudio
+
+WORKDIR /home/rstudio
+
+COPY clientpackage ./clientpackage/
+COPY holdout-files ./holdout-files/
+COPY models ./models/
+COPY predict-script.R README.Rmd report/report.Rmd ./
+
+RUN R -e "devtools::install('clientpackage', dependencies = TRUE)"
+
+USER root
+```
+
+--
+
+Then we setup Gitlab's CI tools so every time the code updates, Gitlab will build the image for us!
+
+---
+
+## Adding our own stuff
+
+For research and modeling work, we often don't want to write our own Dockerfile that copies our code into the image
+
+--
+
+Instead we use the `-v` option of `docker run` to make files on our computer available to the container:
+
+```bash
+docker run -d -p 80:8787 -v ~/someproject:/home/rstudio/someproject rocker/tidyverse
+```
+
+--
+
+(important to attach to home of user `rstudio` since that's the only user available by default)
+
+---
+
+## Another Example
+
+--
+Last time we did a bunch of modeling for a certain client, we were using the R package `h2o`, which requires Java to run.
+--
+ I made a [small Dockerfile](https://github.com/MethodsConsultants/tidyverse-h2o/blob/master/Dockerfile) to add that on top of the `rocker/tidyverse` image:
+
+```Dockerfile
+FROM rocker/tidyverse:latest
+
+RUN apt-get update -qq \
+  &amp;&amp; apt-get -y --no-install-recommends install \
+    default-jdk \
+    default-jre \
+  &amp;&amp; R CMD javareconf \
+  &amp;&amp; install2.r --error \
+    --repos 'http://cran.rstudio.com' \
+    h2o
+```
+
+--
+
+Because this is public on our Github, Docker Hub will automatically re-build the image anytime the Dockerfile _or the base image_ changes
+--
+, _for free_!
+
+--
+
+Then anyone connected to the internet can use this as easily as we used `rocker/tidyverse`:
+
+```bash
+docker run -d -p 80:8787 methodsconsultants/tidyverse-h2o
+```
+
+---
+
+## Things we didn't have time for
+
+--
+- networking
+
+--
+
+- environment variables
+
+--
+
+- why the layered approach is so awesome
+
+--
+
+- how to combine with CI tools
+
+--
+
+- pulling images from non-Docker Hub locations (e.g. private Gitlab registries)
+
+--
+
+- using `docker machine` to make docker hosts for us
+
+--
+
+- combining Docker with Packrat
+
+--
+
+- _orchestrating_ containers with Kubernetes, Docker Swarm, AWS ECS
+
+---
+
+## Parting thoughts
+
+--
+- Getting your Dockerfile right can take more work up-front, but is often worth the time saved down the line
+--
+ -- especially when combined with CI tools
+    
+--
+
+- If you figure out how to install something _once_, you don't have to sweat it again
+
+--
+
+- Having code that runs _here_ but not _there_ is so last decade
+
+--
+
+- **Docker gives you portability _now_ and reproducibility _later_.**
+    </textarea>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false,
+"ratio": "16:9"
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {window.dispatchEvent(new Event('resize'));});
+(function() {var d = document, s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler"); if (!r) return; s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }"; d.head.appendChild(s);})();</script>
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+  tex2jax: {
+    skipTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+  }
+});
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://cdn.bootcss.com/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
