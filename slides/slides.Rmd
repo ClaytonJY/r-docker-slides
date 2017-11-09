@@ -44,21 +44,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 --
 
-**My Take**: 
+**My Take** 
 --
-Docker is a tool for packaging software so it:
+-- Docker is a tool for _packaging software_ so it:
 
 --
 
-- is easy to run in different places
+- is easy to run the same way in different places
 --
 .pull-right[(portable)]
-
---
-
-- runs the same way in all those places
---
-.pull-right[(reproducible)]
 
 --
 
@@ -68,21 +62,26 @@ Docker is a tool for packaging software so it:
 
 --
 
-  
+- runs the same way tomorrow, next month, next year
+--
+.pull-right[(reproducible)]
 
-We build computer systems to run code we write
+---
+class: center, middle
+
+## We increasingly need to not just _write_ code, but _run it_ somewhere else
 
 --
 
-Managing servers is a lot of work, but I want to spend as little time doing it as possible
+## Managing servers is a lot of work, and we want to spend as little time doing it as possible
 
 --
 
-_Docker lets me be lazy and worry less about the systems running our code_
+## **Docker lets me be lazy and worry less about the systems running our code**
 
 ---
 
-## So What?
+## If only we knew sooner...
 
 --
 
@@ -106,11 +105,11 @@ Packrat is ~~great~~okay at managing R package dependencies, but Docker makes it
 
 --
 
-- unpackaged R code (analysis, modeling, etc.)
+- system-level dependencies (java, curl, ssl, etc.)
 
 --
 
-- system-level dependencies (java, curl, ssl, etc.)
+- unpackaged R code (analysis, modeling, etc.)
 
 --
 
@@ -126,11 +125,13 @@ Packrat is ~~great~~okay at managing R package dependencies, but Docker makes it
 
 --
 
-- _Not_ a new concept; been in linux for decades, but Docker started in 2013
+- _Not_ a new concept; been in linux for decades 
+--
+(but Docker started in 2013)
 
 --
 
-- _Containerizing_ some code mean packing it up into a single object that has both the code and everything your code needs to run
+- _Containerizing_ some code mean packing it up into a single object that has both your code and everything your code needs to run
 
 --
 
@@ -139,6 +140,10 @@ Packrat is ~~great~~okay at managing R package dependencies, but Docker makes it
 --
 
 - You need special software (docker) to run images, but it should run exactly the same anywhere you run it
+
+--
+
+- A _container_ is an instance of an image deployed on some computer
 
 ---
 
@@ -186,7 +191,7 @@ In Software Development:
 
 - makes "dev-ops" easier
 
-- many small bits (microservices) are easier to evolve than one bit bit (monolith)
+- many small pieces (microservices) are easier to evolve than one big piece (monolith)
 ]
 
 --
@@ -198,7 +203,7 @@ In Data Science:
 
 - would rather build models than babysit servers
 
-- having all the bits together means less headaches
+- single container can have many different pieces like R, Python, Jupyter, PyTorch, TensorFlow, etc.
 ]
 
 ---
@@ -230,7 +235,31 @@ Steps:
 
 --
 
-[The Rocker group](https://github.com/rocker-org) puts awesome R images on [Docker Hub](hub.docker.com), so we can skip right to step 3
+[The Rocker group](https://github.com/rocker-org) builds & maintains awesome R images on [Docker Hub](hub.docker.com), including:
+
+--
+
+- plain R
+
+--
+
+- R + RStudio
+
+--
+
+- R + RStudio + Tidyverse
+
+--
+
+- R + Shiny Server
+
+--
+
+- R + tex and related stuff
+
+--
+
+Using one of these let's us skip right to step 3, running the image.
 
 ---
 
@@ -266,11 +295,42 @@ This will:
 
 Now open a browser, go to `localhost` (or the IP of your VM), and login to RStudio Server with user/pass `rstudio`/`rstudio`!
 
+--
+
+Sure, you already have R, RStudio, etc. setup _locally_, but how easy is it to get the same setup on a beefy AWS server?
+
+---
+
+## Other useful docker commands
+
+```bash
+# list running containers
+docker ps
+
+# stop a container
+docker stop <name>
+
+# start a stopped container
+docker start <name>
+
+# list runnning AND stopped containers
+docker ps -a
+
+# remove a stopped container
+docker rm <name>
+
+# list images currently on system
+docker images
+
+# remove an image
+docker rmi <image-name>  # can't remove unless all related containers are removed
+```
+
 ---
 
 ## Adding our own stuff
 
-For a recent client deliverable, we used that [`rocker/tidyverse`](https://github.com/rocker-org/rocker-versioned/blob/master/tidyverse/3.4.2/Dockerfile) image as a _base_, and added our own code to it:
+For a recent client deliverable, we used that [`rocker/tidyverse`](https://github.com/rocker-org/rocker-versioned/blob/master/tidyverse/3.4.2/Dockerfile) image as a _base_, and added our own code to it by writing our own _Dockerfile_:
 
 --
 
@@ -299,24 +359,6 @@ Then we setup Gitlab's CI tools so every time the code updates, Gitlab will buil
 
 ## Adding our own stuff
 
-For research and modeling work, we often don't want to write our own Dockerfile that copies our code into the image
-
---
-
-Instead we use the `-v` option of `docker run` to make files on our computer available to the container:
-
-```bash
-docker run -d -p 80:8787 -v ~/someproject:/home/rstudio/someproject rocker/tidyverse
-```
-
---
-
-(important to attach to home of user `rstudio` since that's the only user available by default)
-
----
-
-## Another Example
-
 --
 Last time we did a bunch of modeling for a certain client, we were using the R package `h2o`, which requires Java to run.
 --
@@ -337,7 +379,7 @@ RUN apt-get update -qq \
 
 --
 
-Because this is public on our Github, Docker Hub will automatically re-build the image anytime the Dockerfile _or the base image_ changes
+Because this is public on our Github, I [configured Docker Hub](https://hub.docker.com/r/methodsconsultants/tidyverse-h2o/) to automatically re-build the image anytime the Dockerfile _or the base image_ changes
 --
 , _for free_!
 
@@ -348,6 +390,34 @@ Then anyone connected to the internet can use this as easily as we used `rocker/
 ```bash
 docker run -d -p 80:8787 methodsconsultants/tidyverse-h2o
 ```
+
+---
+
+## Adding stuff outside the Dockerfile
+
+--
+
+When doing research inside a container, we might not want to write our own Dockerfile that copies our code and/or data into the image
+
+--
+
+We instead use the `-v` option of `docker run` to make files on our computer available to the container:
+
+```bash
+docker run -d -p 80:8787 -v ~/someproject:/home/rstudio/someproject rocker/tidyverse
+```
+
+--
+
+Then if you add/delete/edit those files from within docker, the changes will happen on the host filesystem
+
+--
+
+For this specific image, t's important to attach our local volume to the home of user `rstudio` since that's the only user available by default
+
+--
+
+We could use environment variables to make a different user and/or set a password (again, image-specific)
 
 ---
 
